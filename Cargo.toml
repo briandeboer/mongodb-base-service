@@ -3,6 +3,14 @@ name = "mongodb-base-service"
 version = "0.1.0"
 authors = ["bdbmammoth <bdeboer@noreply.com>"]
 edition = "2018"
+license = "MIT"
+keywords = ["mongodb", "service", "starter"]
+readme = "README.md"
+description = """
+A simple Rust service wrapper to simplify finds, updates, deletes
+"""
+repository = "https://github.com/briandeboer/mongodb-base-service"
+
 
 [features]
 default = []
