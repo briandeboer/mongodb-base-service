@@ -16,6 +16,7 @@ pub use model::get_selected_or_first;
 pub use model::Node;
 pub use model::NodeDetails;
 
+#[derive(Clone)]
 pub struct DataSources {
     collections: HashMap<String, MongoService>,
 }
