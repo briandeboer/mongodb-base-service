@@ -17,12 +17,33 @@ pub struct DeleteResponse {
     success: bool,
 }
 
+#[cfg(feature = "graphql")]
+#[derive(Serialize, Deserialize, juniper::GraphQLObject)]
+pub struct DeleteResponseGQL {
+    id: juniper::ID,
+    success: bool,
+}
+
+#[cfg(feature = "graphql")]
+impl From<DeleteResponse> for DeleteResponseGQL {
+    fn from(d: DeleteResponse) -> DeleteResponseGQL {
+        DeleteResponseGQL {
+            id: d.id.into(),
+            success: d.success,
+        }
+    }
+}
+
 use crate::model::Node;
 
 const DEFAULT_LIMIT: i64 = 25;
 
 fn now() -> i64 {
     Utc::now().timestamp()
+}
+
+fn get_id_str(id: &Option<ID>) -> String {
+    id.clone().unwrap_or(ID::new("unknown")).to_string()
 }
 
 pub trait BaseService<'a> {
@@ -49,7 +70,7 @@ pub trait BaseService<'a> {
         after: Option<String>,
         before: Option<String>,
         skip: Option<i32>,
-    ) -> FindResult<T>
+    ) -> Result<FindResult<T>, ServiceError>
     where
         T: serde::Deserialize<'a>,
     {
@@ -76,11 +97,11 @@ pub trait BaseService<'a> {
             PaginatedCursor::new(Some(find_options), after, None)
         };
         let find_results: FindResult<T> = if let Some(f) = filter {
-            query_cursor.find(&coll, Some(&f)).unwrap()
+            query_cursor.find(&coll, Some(&f))?
         } else {
-            query_cursor.find(&coll, self.default_filter()).unwrap()
+            query_cursor.find(&coll, self.default_filter())?
         };
-        find_results
+        Ok(find_results)
     }
 
     fn search<T>(
@@ -92,7 +113,7 @@ pub trait BaseService<'a> {
         after: Option<String>,
         before: Option<String>,
         skip: Option<i32>,
-    ) -> FindResult<T>
+    ) -> Result<FindResult<T>, ServiceError>
     where
         T: serde::Deserialize<'a>,
     {
@@ -125,40 +146,50 @@ pub trait BaseService<'a> {
                 doc! { field: Bson::RegExp(search_term.clone(), "i".to_string()) },
             ));
         }
-        let find_results: FindResult<T> = query_cursor.find(&coll, Some(&filter)).unwrap();
-        find_results
+        let find_results: FindResult<T> = query_cursor.find(&coll, Some(&filter))?;
+        Ok(find_results)
     }
 
-    fn find_one_by_id<T>(&self, id: ID) -> Option<T>
+    fn find_one_by_id<T>(&self, id: ID) -> Result<Option<T>, ServiceError>
     where
         T: serde::Deserialize<'a>,
     {
         self.find_one_by_string_value(self.id_parameter(), &id.to_string())
     }
 
-    fn find_one_by_string_value<T>(&self, field: &str, value: &str) -> Option<T>
+    fn find_one_by_string_value<T>(
+        &self,
+        field: &str,
+        value: &str,
+    ) -> Result<Option<T>, ServiceError>
     where
         T: serde::Deserialize<'a>,
     {
         let coll = self.data_source();
         let query = Some(doc! { field => value });
-        let find_result = coll.find_one(query, None).unwrap();
+        let find_result = coll.find_one(query, None)?;
         match find_result {
-            Some(item_doc) => Some(bson::from_bson(bson::Bson::Document(item_doc)).unwrap()),
-            None => None,
+            Some(item_doc) => {
+                let doc = bson::from_bson(bson::Bson::Document(item_doc))?;
+                Ok(Some(doc))
+            }
+            None => Ok(None),
         }
     }
 
-    fn find_one_by_i64<T>(&self, field: &str, value: i64) -> Option<T>
+    fn find_one_by_i64<T>(&self, field: &str, value: i64) -> Result<Option<T>, ServiceError>
     where
         T: serde::Deserialize<'a>,
     {
         let coll = self.data_source();
         let query = Some(doc! { field => value });
-        let find_result = coll.find_one(query, None).unwrap();
+        let find_result = coll.find_one(query, None)?;
         match find_result {
-            Some(item_doc) => Some(bson::from_bson(bson::Bson::Document(item_doc)).unwrap()),
-            None => None,
+            Some(item_doc) => {
+                let doc = bson::from_bson(bson::Bson::Document(item_doc))?;
+                Ok(Some(doc))
+            }
+            None => Ok(None),
         }
     }
 
@@ -166,7 +197,8 @@ pub trait BaseService<'a> {
         &self,
         id: ID,
         field_path: &str,
-        new_item: T,
+        new_items: Vec<T>,
+        user_id: Option<ID>,
     ) -> Result<U, ServiceError>
     where
         T: serde::Serialize,
@@ -181,37 +213,42 @@ pub trait BaseService<'a> {
             None => Err(ServiceError::NotFound("Unable to find item".into())),
             Some(_item) => {
                 // insert it
-                let serialized_member = bson::to_bson(&new_item)?;
-                if let bson::Bson::Document(mut document) = serialized_member {
-                    let mut node_details = Document::new();
-                    node_details.insert("id", uuid::Uuid::new_v4().to_hyphenated().to_string());
-                    node_details.insert("date_created", now());
-                    node_details.insert("date_modified", now());
-                    node_details.insert("created_by_id", "unknown");
-                    node_details.insert("updated_by_id", "unknown");
-                    document.insert("node", node_details);
-                    let update_doc = doc! { "$push": { field_path: document } };
-                    let _result = coll.update_one(query, update_doc, None);
-                    let item_doc =
-                        coll.find_one(Some(doc! { self.id_parameter() => &id.to_string() }), None)?;
-                    match item_doc {
-                        Some(i) => {
-                            let item: U = bson::from_bson(bson::Bson::Document(i))?;
-                            Ok(item)
+                let serialized_members = new_items.iter().fold(Vec::new(), |mut acc, item| {
+                    match bson::to_bson(&item) {
+                        Ok(serialized_member) => {
+                            if let bson::Bson::Document(mut document) = serialized_member {
+                                let mut node_details = Document::new();
+                                node_details
+                                    .insert("id", uuid::Uuid::new_v4().to_hyphenated().to_string());
+                                node_details.insert("date_created", now());
+                                node_details.insert("date_modified", now());
+                                node_details.insert("created_by_id", get_id_str(&user_id));
+                                node_details.insert("updated_by_id", get_id_str(&user_id));
+                                document.insert("node", node_details);
+                                acc.push(document);
+                            }
                         }
-                        None => Err(ServiceError::NotFound("Unable to find document".into())),
+                        Err(_) => warn!("Unable to insert item"),
                     }
-                } else {
-                    warn!("Error converting the BSON object into a MongoDB document");
-                    Err(ServiceError::ParseError(
-                        "Error converting the BSON object into a MongoDB document".into(),
-                    ))
+                    acc
+                });
+
+                let update_doc = doc! { "$push": { field_path: { "$each": serialized_members } } };
+                let _result = coll.update_one(query, update_doc, None);
+                let item_doc =
+                    coll.find_one(Some(doc! { self.id_parameter() => &id.to_string() }), None)?;
+                match item_doc {
+                    Some(i) => {
+                        let item: U = bson::from_bson(bson::Bson::Document(i))?;
+                        Ok(item)
+                    }
+                    None => Err(ServiceError::NotFound("Unable to find document".into())),
                 }
             }
         }
     }
 
-    fn insert_one<T, U>(&self, new_item: T) -> Result<U, ServiceError>
+    fn insert_one<T, U>(&self, new_item: T, user_id: Option<ID>) -> Result<U, ServiceError>
     where
         T: serde::Serialize,
         U: serde::Deserialize<'a> + Node,
@@ -224,8 +261,8 @@ pub trait BaseService<'a> {
             node_details.insert("id", uuid::Uuid::new_v4().to_hyphenated().to_string());
             node_details.insert("date_created", now());
             node_details.insert("date_modified", now());
-            node_details.insert("created_by_id", "unknown");
-            node_details.insert("updated_by_id", "unknown");
+            node_details.insert("created_by_id", get_id_str(&user_id));
+            node_details.insert("updated_by_id", get_id_str(&user_id));
             document.insert("node", node_details);
             let result = coll.insert_one(document, None)?; // Insert into a MongoDB collection
             let id = result.inserted_id;
@@ -288,6 +325,7 @@ pub trait BaseService<'a> {
         field_path: &str,
         embedded_id: ID,
         update_item: T,
+        user_id: Option<ID>,
     ) -> Result<U, ServiceError>
     where
         T: serde::Serialize,
@@ -309,7 +347,10 @@ pub trait BaseService<'a> {
                 }
             }
             update_doc.insert(format!("{}.node.date_modified", array_path), now());
-            update_doc.insert(format!("{}.node.updated_by_id", array_path), "unknown");
+            update_doc.insert(
+                format!("{}.node.updated_by_id", array_path),
+                get_id_str(&user_id),
+            );
             let update = doc! { "$set": update_doc };
             let search = doc! { self.id_parameter(): &id.to_string() };
             match coll.update_one(search_embedded, update, None) {
@@ -333,7 +374,12 @@ pub trait BaseService<'a> {
         }
     }
 
-    fn update_one<T, U>(&self, id: ID, update_item: T) -> Result<U, ServiceError>
+    fn update_one<T, U>(
+        &self,
+        id: ID,
+        update_item: T,
+        user_id: Option<ID>,
+    ) -> Result<U, ServiceError>
     where
         T: serde::Serialize,
         U: serde::Deserialize<'a> + Node,
@@ -343,7 +389,7 @@ pub trait BaseService<'a> {
         let serialized_member = bson::to_bson(&update_item)?;
         if let bson::Bson::Document(mut document) = serialized_member {
             document.insert("node.date_modified", now());
-            document.insert("node.updated_by_id", "unknown");
+            document.insert("node.updated_by_id", get_id_str(&user_id));
             match coll.update_one(search.clone(), doc! {"$set": document}, None) {
                 Ok(_res) => match coll.find_one(Some(search), None) {
                     Ok(res) => match res {

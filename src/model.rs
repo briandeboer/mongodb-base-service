@@ -36,6 +36,13 @@ impl From<juniper::ID> for ID {
     }
 }
 
+#[cfg(feature = "graphql")]
+impl From<ID> for juniper::ID {
+    fn from(id: ID) -> juniper::ID {
+        juniper::ID::new(id.to_string())
+    }
+}
+
 #[derive(Clone, Deserialize, Serialize)]
 pub struct NodeDetails {
     pub id: ID,

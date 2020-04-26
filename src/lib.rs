@@ -5,7 +5,7 @@ mod error;
 mod model;
 mod mongo;
 
-use crate::error::ServiceError;
+pub use crate::error::ServiceError;
 use crate::mongo::MongoService;
 
 use mongodb::Collection;
@@ -15,6 +15,10 @@ pub use base::{BaseService, DeleteResponse};
 pub use model::get_selected_or_first;
 pub use model::Node;
 pub use model::NodeDetails;
+pub use model::ID;
+
+#[cfg(feature = "graphql")]
+pub use base::DeleteResponseGQL;
 
 #[derive(Clone)]
 pub struct DataSources {
