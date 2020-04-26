@@ -280,6 +280,56 @@ pub trait BaseService<'a> {
         }
     }
 
+    fn insert_many<T, U>(
+        &self,
+        new_items: Vec<T>,
+        user_id: Option<ID>,
+    ) -> Result<Vec<U>, ServiceError>
+    where
+        T: serde::Serialize,
+        U: serde::Deserialize<'a> + Node,
+    {
+        let coll = self.data_source();
+
+        let serialized_members = new_items.iter().fold(Vec::new(), |mut acc, item| {
+            match bson::to_bson(&item) {
+                Ok(serialized_member) => {
+                    if let bson::Bson::Document(mut document) = serialized_member {
+                        let mut node_details = Document::new();
+                        node_details.insert("id", uuid::Uuid::new_v4().to_hyphenated().to_string());
+                        node_details.insert("date_created", now());
+                        node_details.insert("date_modified", now());
+                        node_details.insert("created_by_id", get_id_str(&user_id));
+                        node_details.insert("updated_by_id", get_id_str(&user_id));
+                        document.insert("node", node_details);
+                        acc.push(document);
+                    }
+                }
+                Err(_) => warn!("Unable to insert item"),
+            }
+            acc
+        });
+
+        let result = coll.insert_many(serialized_members, None)?;
+        let ids: Vec<&Bson> = result.inserted_ids.values().collect();
+
+        let filter = doc! { "_id": { "$in": ids } };
+        let items_cursor: mongodb::Cursor = coll.find(Some(filter), None)?;
+        let mut items: Vec<U> = vec![];
+        for result in items_cursor {
+            match result {
+                Ok(doc) => {
+                    let item: U = bson::from_bson(bson::Bson::Document(doc.clone())).unwrap();
+                    items.push(item);
+                }
+                Err(error) => {
+                    warn!("Error to find inserted doc: {}", error);
+                }
+            }
+        }
+        Ok(items)
+    }
+
     fn delete_one_by_id(&self, id: ID) -> Result<DeleteResponse, ServiceError> {
         let coll = self.data_source();
         let filter = doc! { self.id_parameter(): id.to_string() };

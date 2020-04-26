@@ -43,7 +43,7 @@ impl From<ID> for juniper::ID {
     }
 }
 
-#[derive(Clone, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct NodeDetails {
     pub id: ID,
     date_created: i64,
