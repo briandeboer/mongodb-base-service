@@ -1,6 +1,6 @@
 [package]
 name = "mongodb-base-service"
-version = "0.1.1"
+version = "0.2.0"
 authors = ["bdbmammoth <bdeboer@noreply.com>"]
 edition = "2018"
 license = "MIT"
