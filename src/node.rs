@@ -26,12 +26,12 @@ impl NodeDetails {
         get_timestamp(self.date_modified)
     }
 
-    pub fn created_by_id(&self) -> Option<ID> {
-        self.created_by_id.to_owned()
+    pub fn created_by_id(&self) -> &Option<ID> {
+        &self.created_by_id
     }
 
-    pub fn updated_by_id(&self) -> Option<ID> {
-        self.updated_by_id.to_owned()
+    pub fn updated_by_id(&self) -> &Option<ID> {
+        &self.updated_by_id
     }
 }
 

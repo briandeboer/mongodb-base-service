@@ -1,10 +1,10 @@
 use bson::{oid::ObjectId, Bson};
-use serde::{ser::SerializeMap, Deserialize, Serialize, Serializer};
+use serde::{ser::SerializeMap, Deserialize, Deserializer, Serialize, Serializer};
 
 /// An ID as defined by the GraphQL specification
 ///
 /// Represented as a string, but can be converted _to_ from an integer as well.
-#[derive(Clone, Debug, Eq, PartialEq, Deserialize)]
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub enum ID {
     ObjectId(ObjectId),
     String(String),
@@ -28,9 +28,36 @@ impl Serialize for ID {
     }
 }
 
+impl<'de> Deserialize<'de> for ID {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        Ok(ID::with_bson(&Bson::deserialize(deserializer)?))
+    }
+}
+
+// fn callback<'de, D>(deserializer: D) -> Result<ID, D::Error>
+// where
+//     D: Deserializer<'de>,
+// {
+//     println!("This is a deserializer");
+//     Ok(ID::with_bson(&Bson::deserialize(deserializer)?))
+// }
+
 impl From<String> for ID {
     fn from(s: String) -> ID {
         ID::String(s)
+    }
+}
+
+impl From<ID> for String {
+    fn from(id: ID) -> String {
+        match id {
+            ID::ObjectId(o) => o.to_hex(),
+            ID::String(s) => s,
+            ID::I64(i) => i.to_string(),
+        }
     }
 }
 
@@ -83,6 +110,14 @@ impl ID {
             ID::ObjectId(o) => Bson::ObjectId(o.clone()),
             ID::String(s) => Bson::String(s.to_string()),
             ID::I64(i) => Bson::I64(i.clone()),
+        }
+    }
+
+    pub fn to_string(&self) -> String {
+        match self {
+            ID::ObjectId(o) => o.to_hex(),
+            ID::String(s) => s.clone(),
+            ID::I64(i) => i.to_string(),
         }
     }
 }
