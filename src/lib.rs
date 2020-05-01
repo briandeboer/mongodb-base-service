@@ -12,7 +12,6 @@ use mongodb::Collection;
 use std::collections::HashMap;
 
 pub use base::{BaseService, DeleteResponse};
-pub use model::get_selected_or_first;
 pub use model::Node;
 pub use model::NodeDetails;
 pub use model::ID;
