@@ -9,7 +9,8 @@ use serde::{Deserialize, Serialize};
 use voca_rs::case::snake_case;
 
 use crate::error::ServiceError;
-use crate::model::ID;
+use crate::id::ID;
+use crate::node::Node;
 
 #[derive(Serialize, Deserialize)]
 pub struct DeleteResponse {
@@ -33,8 +34,6 @@ impl From<DeleteResponse> for DeleteResponseGQL {
         }
     }
 }
-
-use crate::model::Node;
 
 const DEFAULT_LIMIT: i64 = 25;
 
@@ -518,6 +517,7 @@ pub trait BaseService<'a> {
         let coll = self.data_source();
         let search = doc! { self.id_parameter(): id.to_bson() };
         let serialized_member = bson::to_bson(&update_item)?;
+        println!("{:?}", serialized_member);
         if let bson::Bson::Document(mut document) = serialized_member {
             document.insert("node.date_modified", now());
             if let Some(uid) = user_id {

@@ -1,15 +1,31 @@
 use bson::{oid::ObjectId, Bson};
-use chrono::{DateTime, TimeZone, Utc};
-use serde::{Deserialize, Serialize};
+use serde::{ser::SerializeMap, Deserialize, Serialize, Serializer};
 
 /// An ID as defined by the GraphQL specification
 ///
 /// Represented as a string, but can be converted _to_ from an integer as well.
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Deserialize)]
 pub enum ID {
     ObjectId(ObjectId),
     String(String),
     I64(i64),
+}
+
+impl Serialize for ID {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        match self {
+            ID::ObjectId(o) => {
+                let mut map = serializer.serialize_map(Some(1))?;
+                map.serialize_entry("$oid", &o.to_string())?;
+                map.end()
+            }
+            ID::String(s) => serializer.serialize_str(s),
+            ID::I64(i) => serializer.serialize_i64(i.clone()),
+        }
+    }
 }
 
 impl From<String> for ID {
@@ -44,8 +60,8 @@ impl ID {
         ID::I64(value.into())
     }
 
-    pub fn with_oid<O: Into<ObjectId>>(value: ObjectId) -> Self {
-        ID::ObjectId(value.into())
+    pub fn with_oid(value: ObjectId) -> Self {
+        ID::ObjectId(value)
     }
 
     pub fn with_string_to_oid<S: Into<String>>(value: S) -> Self {
@@ -53,7 +69,7 @@ impl ID {
         ID::ObjectId(id)
     }
 
-    #[cfg(feature = "graphql")]
+    // #[cfg(feature = "graphql")]
     pub fn with_juniper_to_oid(value: juniper::ID) -> Self {
         let id = ObjectId::with_string(&value.to_string()).unwrap();
         ID::ObjectId(id)
@@ -77,14 +93,14 @@ impl ID {
     }
 }
 
-#[cfg(feature = "graphql")]
+// #[cfg(feature = "graphql")]
 impl From<juniper::ID> for ID {
     fn from(id: juniper::ID) -> ID {
         ID::String(id.to_string())
     }
 }
 
-#[cfg(feature = "graphql")]
+// #[cfg(feature = "graphql")]
 impl From<ID> for juniper::ID {
     fn from(id: ID) -> juniper::ID {
         match id {
@@ -97,6 +113,7 @@ impl From<ID> for juniper::ID {
 
 impl From<ID> for ObjectId {
     fn from(id: ID) -> ObjectId {
+        println!("I am converting to an object {:?}", id);
         match id {
             ID::ObjectId(o) => o,
             ID::String(s) => ObjectId::with_string(&s).unwrap(),
@@ -105,39 +122,47 @@ impl From<ID> for ObjectId {
     }
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
-pub struct NodeDetails {
-    date_created: Option<i64>,
-    date_modified: Option<i64>,
-    created_by_id: Option<ID>,
-    updated_by_id: Option<ID>,
-}
+use juniper::{
+    parser::{ParseError, ScalarToken, Token},
+    InputValue, ParseScalarResult, Value,
+};
 
-fn get_timestamp(timestamp: Option<i64>) -> Option<DateTime<Utc>> {
-    match timestamp {
-        Some(ts) => Some(Utc.timestamp(ts, 0)),
-        None => None,
-    }
-}
-
-impl NodeDetails {
-    pub fn date_created(&self) -> Option<DateTime<Utc>> {
-        get_timestamp(self.date_created)
+graphql_scalar!(ID as "ID" where Scalar = <S>{
+    resolve(&self) -> Value {
+        match self {
+            ID::ObjectId(ref o) => Value::scalar(format!("$oid:{}", o.to_hex())),
+            ID::String(ref s) =>  Value::scalar(s.clone()),
+            ID::I64(ref i) =>  Value::scalar(i.clone() as i32),
+        }
     }
 
-    pub fn date_modified(&self) -> Option<DateTime<Utc>> {
-        get_timestamp(self.date_modified)
+    from_input_value(v: &InputValue) -> Option<ID> {
+        match *v {
+            InputValue::Scalar(ref s) => {
+                match s.as_string() {
+                    Some(s) => {
+                        if s.starts_with("$oid:") {
+                            match ObjectId::with_string(&s[5..]) {
+                                Ok(oid) => Some(ID::ObjectId(oid)),
+                                Err(_) => Some(ID::String(s)),
+                            }
+                        } else {
+                            Some(ID::String(s))
+                        }
+                    },
+                    None => s.as_int().map(|i| ID::I64(i as i64))
+                }
+            }
+            _ => None
+        }
     }
 
-    pub fn created_by_id(&self) -> Option<ID> {
-        self.created_by_id.to_owned()
+    from_str<'a>(value: ScalarToken<'a>) -> ParseScalarResult<'a, S> {
+        match value {
+            ScalarToken::String(value) | ScalarToken::Int(value) => {
+                Ok(S::from(value.to_owned()))
+            }
+            _ => Err(ParseError::UnexpectedToken(Token::Scalar(value))),
+        }
     }
-
-    pub fn updated_by_id(&self) -> Option<ID> {
-        self.updated_by_id.to_owned()
-    }
-}
-
-pub trait Node {
-    fn node(&self) -> &NodeDetails;
-}
+});

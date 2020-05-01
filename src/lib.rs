@@ -1,9 +1,13 @@
+#[macro_use]
+extern crate juniper;
+
 use bson::Document;
 
 mod base;
 mod error;
-mod model;
+mod id;
 mod mongo;
+mod node;
 
 pub use crate::error::ServiceError;
 use crate::mongo::MongoService;
@@ -12,9 +16,9 @@ use mongodb::Collection;
 use std::collections::HashMap;
 
 pub use base::{BaseService, DeleteResponse};
-pub use model::Node;
-pub use model::NodeDetails;
-pub use model::ID;
+pub use id::ID;
+pub use node::Node;
+pub use node::NodeDetails;
 
 #[cfg(feature = "graphql")]
 pub use base::DeleteResponseGQL;
