@@ -69,12 +69,6 @@ impl ID {
         ID::ObjectId(id)
     }
 
-    // #[cfg(feature = "graphql")]
-    pub fn with_juniper_to_oid(value: juniper::ID) -> Self {
-        let id = ObjectId::with_string(&value.to_string()).unwrap();
-        ID::ObjectId(id)
-    }
-
     pub fn with_bson(value: &Bson) -> Self {
         match value.into() {
             Bson::String(s) => ID::String(s),
@@ -93,14 +87,14 @@ impl ID {
     }
 }
 
-// #[cfg(feature = "graphql")]
+#[cfg(feature = "graphql")]
 impl From<juniper::ID> for ID {
     fn from(id: juniper::ID) -> ID {
         ID::String(id.to_string())
     }
 }
 
-// #[cfg(feature = "graphql")]
+#[cfg(feature = "graphql")]
 impl From<ID> for juniper::ID {
     fn from(id: ID) -> juniper::ID {
         match id {
@@ -122,11 +116,13 @@ impl From<ID> for ObjectId {
     }
 }
 
+#[cfg(feature = "graphql")]
 use juniper::{
     parser::{ParseError, ScalarToken, Token},
     InputValue, ParseScalarResult, Value,
 };
 
+#[cfg(feature = "graphql")]
 graphql_scalar!(ID as "ID" where Scalar = <S>{
     resolve(&self) -> Value {
         match self {

@@ -21,7 +21,7 @@ pub struct DeleteResponse {
 #[cfg(feature = "graphql")]
 #[derive(Serialize, Deserialize, juniper::GraphQLObject)]
 pub struct DeleteResponseGQL {
-    id: juniper::ID,
+    id: ID,
     success: bool,
 }
 

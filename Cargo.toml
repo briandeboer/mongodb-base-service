@@ -14,7 +14,7 @@ repository = "https://github.com/briandeboer/mongodb-base-service"
 
 [features]
 default = []
-graphql = []
+graphql = ["juniper"]
 
 [dependencies]
 base64 = "0.12.0"
@@ -31,4 +31,4 @@ serde = { version = "1.0", features = ["derive"] }
 uuid = { version = "0.8.1", features = ["serde", "v4"] }
 voca_rs = "1.10.0"
 # optional
-juniper = { version = "0.14.2", optional = false }
+juniper = { version = "0.14.2", optional = true }
