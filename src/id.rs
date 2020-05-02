@@ -1,5 +1,9 @@
 use bson::{oid::ObjectId, Bson};
-use serde::{ser::SerializeMap, Deserialize, Deserializer, Serialize, Serializer};
+use serde::{
+    de, de::MapAccess, de::Visitor, ser::SerializeMap, Deserialize, Deserializer, Serialize,
+    Serializer,
+};
+use std::fmt;
 
 /// An ID as defined by the GraphQL specification
 ///
@@ -28,22 +32,81 @@ impl Serialize for ID {
     }
 }
 
+struct IDVisitor;
+impl<'de> Visitor<'de> for IDVisitor {
+    type Value = ID;
+
+    fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+        formatter.write_str("unable to parse ID - was not Bson or Json string")
+    }
+
+    fn visit_map<M>(self, access: M) -> Result<Self::Value, M::Error>
+    where
+        M: MapAccess<'de>,
+    {
+        // send this back into the Bson deserializer
+        Ok(ID::with_bson(&Bson::deserialize(
+            de::value::MapAccessDeserializer::new(access),
+        )?))
+    }
+
+    fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
+    where
+        E: de::Error,
+    {
+        if v.starts_with("$oid:") {
+            match ObjectId::with_string(&v[5..]) {
+                Ok(oid) => Ok(ID::ObjectId(oid)),
+                Err(_) => Ok(ID::String(v.into())),
+            }
+        } else {
+            Ok(ID::String(v.into()))
+        }
+    }
+
+    fn visit_string<E>(self, v: String) -> Result<Self::Value, E>
+    where
+        E: de::Error,
+    {
+        if v.starts_with("$oid:") {
+            match ObjectId::with_string(&v[5..]) {
+                Ok(oid) => Ok(ID::ObjectId(oid)),
+                Err(_) => Ok(ID::String(v)),
+            }
+        } else {
+            Ok(ID::String(v))
+        }
+    }
+
+    fn visit_i64<E>(self, v: i64) -> Result<Self::Value, E>
+    where
+        E: de::Error,
+    {
+        Ok(ID::I64(v))
+    }
+
+    fn visit_u64<E>(self, v: u64) -> Result<Self::Value, E>
+    where
+        E: de::Error,
+    {
+        Ok(ID::I64(v as i64))
+    }
+}
+
 impl<'de> Deserialize<'de> for ID {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: Deserializer<'de>,
     {
-        Ok(ID::with_bson(&Bson::deserialize(deserializer)?))
+        deserializer.deserialize_any(IDVisitor)
     }
 }
 
-// fn callback<'de, D>(deserializer: D) -> Result<ID, D::Error>
-// where
-//     D: Deserializer<'de>,
-// {
-//     println!("This is a deserializer");
-//     Ok(ID::with_bson(&Bson::deserialize(deserializer)?))
-// }
+impl fmt::Display for ID {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.to_string())
+    }
+}
 
 impl From<String> for ID {
     fn from(s: String) -> ID {
@@ -142,7 +205,6 @@ impl From<ID> for juniper::ID {
 
 impl From<ID> for ObjectId {
     fn from(id: ID) -> ObjectId {
-        println!("I am converting to an object {:?}", id);
         match id {
             ID::ObjectId(o) => o,
             ID::String(s) => ObjectId::with_string(&s).unwrap(),
