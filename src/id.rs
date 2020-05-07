@@ -54,28 +54,14 @@ impl<'de> Visitor<'de> for IDVisitor {
     where
         E: de::Error,
     {
-        if v.starts_with("$oid:") {
-            match ObjectId::with_string(&v[5..]) {
-                Ok(oid) => Ok(ID::ObjectId(oid)),
-                Err(_) => Ok(ID::String(v.into())),
-            }
-        } else {
-            Ok(ID::String(v.into()))
-        }
+        Ok(ID::from_string(v))
     }
 
     fn visit_string<E>(self, v: String) -> Result<Self::Value, E>
     where
         E: de::Error,
     {
-        if v.starts_with("$oid:") {
-            match ObjectId::with_string(&v[5..]) {
-                Ok(oid) => Ok(ID::ObjectId(oid)),
-                Err(_) => Ok(ID::String(v)),
-            }
-        } else {
-            Ok(ID::String(v))
-        }
+        Ok(ID::from_string(v))
     }
 
     fn visit_i64<E>(self, v: i64) -> Result<Self::Value, E>
@@ -110,14 +96,14 @@ impl fmt::Display for ID {
 
 impl From<String> for ID {
     fn from(s: String) -> ID {
-        ID::String(s)
+        ID::from_string(s)
     }
 }
 
 impl From<ID> for String {
     fn from(id: ID) -> String {
         match id {
-            ID::ObjectId(o) => o.to_hex(),
+            ID::ObjectId(o) => format!("$oid:{}", o.to_hex()),
             ID::String(s) => s,
             ID::I64(i) => i.to_string(),
         }
@@ -138,7 +124,15 @@ impl From<ObjectId> for ID {
 
 impl ID {
     pub fn from_string<S: Into<String>>(value: S) -> Self {
-        ID::String(value.into())
+        let s: String = value.into();
+        if s.starts_with("$oid:") {
+            match ObjectId::with_string(&s[5..]) {
+                Ok(oid) => ID::ObjectId(oid),
+                Err(_) => ID::String(s),
+            }
+        } else {
+            ID::String(s.into())
+        }
     }
 
     /// Construct a new ID from anything implementing `Into<String>`
@@ -152,11 +146,6 @@ impl ID {
 
     pub fn with_oid(value: ObjectId) -> Self {
         ID::ObjectId(value)
-    }
-
-    pub fn with_string_to_oid<S: Into<String>>(value: S) -> Self {
-        let id = ObjectId::with_string(&value.into()).unwrap();
-        ID::ObjectId(id)
     }
 
     pub fn with_bson(value: &Bson) -> Self {
@@ -177,11 +166,7 @@ impl ID {
     }
 
     pub fn to_string(&self) -> String {
-        match self {
-            ID::ObjectId(o) => o.to_hex(),
-            ID::String(s) => s.clone(),
-            ID::I64(i) => i.to_string(),
-        }
+        self.clone().into()
     }
 }
 
@@ -195,11 +180,7 @@ impl From<juniper::ID> for ID {
 #[cfg(feature = "graphql")]
 impl From<ID> for juniper::ID {
     fn from(id: ID) -> juniper::ID {
-        match id {
-            ID::ObjectId(o) => juniper::ID::new(o.to_hex()),
-            ID::String(s) => juniper::ID::new(s),
-            ID::I64(s) => juniper::ID::new(s.to_string()),
-        }
+        juniper::ID::new(id.to_string())
     }
 }
 
@@ -234,14 +215,7 @@ graphql_scalar!(ID as "ID" where Scalar = <S>{
             InputValue::Scalar(ref s) => {
                 match s.as_string() {
                     Some(s) => {
-                        if s.starts_with("$oid:") {
-                            match ObjectId::with_string(&s[5..]) {
-                                Ok(oid) => Some(ID::ObjectId(oid)),
-                                Err(_) => Some(ID::String(s)),
-                            }
-                        } else {
-                            Some(ID::String(s))
-                        }
+                        Some(ID::from_string(s))
                     },
                     None => s.as_int().map(|i| ID::I64(i as i64))
                 }
