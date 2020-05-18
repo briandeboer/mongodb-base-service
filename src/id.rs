@@ -233,3 +233,46 @@ graphql_scalar!(ID as "ID" where Scalar = <S>{
         }
     }
 });
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_convert_id_from_normal_string() {
+        let test_string = String::from("Something");
+        assert_eq!(
+            ID::from_string(test_string),
+            ID::String(String::from("Something"))
+        );
+        let test_str = "SomethingElse";
+        assert_eq!(
+            ID::from_string(test_str),
+            ID::String(String::from("SomethingElse"))
+        );
+    }
+
+    #[test]
+    fn test_convert_id_from_oid() {
+        let test_string = String::from("$oid:5eaefffa00c9fdf000c46fdc");
+        assert_eq!(
+            ID::from_string(test_string),
+            ID::ObjectId(ObjectId::with_string("5eaefffa00c9fdf000c46fdc").unwrap())
+        );
+    }
+
+    #[test]
+    fn test_convert_invalid_id() {
+        assert_eq!(
+            ID::from_string("$oid:not_valid"),
+            ID::String("$oid:not_valid".to_string())
+        );
+    }
+
+    #[test]
+    fn test_convert_id_from_number() {
+        assert_eq!(ID::from(64 as i64), ID::I64(64));
+        assert_eq!(ID::with_i64(32 as u32), ID::I64(32));
+        assert_eq!(ID::with_i64(8 as u8), ID::I64(8));
+    }
+}

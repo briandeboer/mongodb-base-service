@@ -2,7 +2,7 @@ use bson::{doc, oid::ObjectId, Bson, Document};
 
 use chrono::Utc;
 use log::warn;
-use mongodb::options::{FindOptions, InsertManyOptions, UpdateOptions};
+use mongodb::options::{FindOneOptions, FindOptions, InsertManyOptions, UpdateOptions};
 use mongodb::Collection;
 use mongodb_cursor_pagination::{CursorDirections, FindResult, PaginatedCursor};
 use serde::{Deserialize, Serialize};
@@ -100,6 +100,41 @@ pub trait BaseService<'a> {
             query_cursor.find(&coll, self.default_filter())?
         };
         Ok(find_results)
+    }
+
+    fn get_embedded_by_id<U>(
+        &self,
+        id: ID,
+        field: &str,
+        limit: Option<i32>,
+        skip: Option<i32>,
+    ) -> Result<Vec<U>, ServiceError>
+    where
+        U: serde::Deserialize<'a>,
+    {
+        let coll = self.data_source();
+        let find_options = FindOneOptions::builder()
+            .projection(Some(doc! {
+                field: {
+                    "$slice": [ skip.unwrap_or(0), limit.unwrap_or(self.default_limit() as i32) ]
+                }
+            }))
+            .build();
+        let query = Some(doc! { self.id_parameter(): id.to_bson() });
+        let find_result = coll.find_one(query, Some(find_options))?;
+        match find_result {
+            Some(result) => {
+                let embedded_result = result.get_array(field);
+                match embedded_result {
+                    Ok(embedded) => {
+                        let docs = bson::from_bson(bson::Bson::Array(embedded.clone()))?;
+                        Ok(docs)
+                    }
+                    Err(e) => Err(ServiceError::ParseError(e.to_string())),
+                }
+            }
+            None => Ok(Vec::new()),
+        }
     }
 
     fn search<T>(
