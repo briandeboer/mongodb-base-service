@@ -1,7 +1,7 @@
 use bson::{doc, oid::ObjectId, Bson, Document};
 
 use chrono::Utc;
-use log::warn;
+use log::{debug, warn};
 use mongodb::options::{FindOneOptions, FindOptions, InsertManyOptions, UpdateOptions};
 use mongodb::Collection;
 use mongodb_cursor_pagination::{CursorDirections, FindResult, PaginatedCursor};
@@ -181,6 +181,21 @@ pub trait BaseService<'a> {
         }
         let find_results: FindResult<T> = query_cursor.find(&coll, Some(&filter))?;
         Ok(find_results)
+    }
+
+    fn find_one<T>(&self, filter: Document) -> Result<Option<T>, ServiceError>
+    where
+        T: serde::Deserialize<'a>,
+    {
+        let coll = self.data_source();
+        let find_result = coll.find_one(filter, None)?;
+        match find_result {
+            Some(item_doc) => {
+                let doc = bson::from_bson(bson::Bson::Document(item_doc))?;
+                Ok(Some(doc))
+            }
+            None => Ok(None),
+        }
     }
 
     fn find_one_by_object_id<T>(
@@ -385,6 +400,15 @@ pub trait BaseService<'a> {
                 node_details.insert("updated_by_id", uid.to_bson());
             }
             document.insert("node", node_details);
+            // remove empty _id values
+            if let Some(temp_id) = document.get(self.id_parameter()) {
+                match temp_id {
+                    Bson::Null => {
+                        document.remove(self.id_parameter());
+                    }
+                    _ => debug!("id has value {}", temp_id),
+                }
+            }
             let result = coll.insert_one(document, None)?; // Insert into a MongoDB collection
             let id = ID::with_bson(&result.inserted_id);
             Ok(id)
@@ -411,7 +435,6 @@ pub trait BaseService<'a> {
                 Ok(serialized_member) => {
                     if let bson::Bson::Document(mut document) = serialized_member {
                         let mut node_details = Document::new();
-                        node_details.insert("id", uuid::Uuid::new_v4().to_hyphenated().to_string());
                         node_details.insert("date_created", now());
                         node_details.insert("date_modified", now());
                         if let Some(uid) = &user_id {
