@@ -2,7 +2,7 @@ use crate::id::ID;
 use chrono::{DateTime, TimeZone, Utc};
 use serde::{Deserialize, Serialize};
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Default, Debug, Deserialize, Serialize)]
 pub struct NodeDetails {
     date_created: Option<i64>,
     date_modified: Option<i64>,
