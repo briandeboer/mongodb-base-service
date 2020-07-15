@@ -1,6 +1,6 @@
 [package]
 name = "mongodb-base-service"
-version = "0.4.2"
+version = "0.4.3"
 authors = ["bdbmammoth <bdeboer@noreply.com>"]
 edition = "2018"
 license = "MIT"
@@ -18,12 +18,12 @@ graphql = ["juniper"]
 
 [dependencies]
 bson = "0.14.1"
-chrono = { version = "0.4.11", features = ["serde"] }
+chrono = { version = "0.4.13", features = ["serde"] }
 log = "0.4.8"
 mongodb-cursor-pagination = { version = "0.2.8", features = ["graphql"] }
 mongodb = "0.9.2"
 serde = { version = "1.0", features = ["derive"] }
 uuid = { version = "0.8.1", features = ["serde", "v4"] }
-voca_rs = "1.10.0"
+voca_rs = "1.10.1"
 # optional
 juniper = { version = "0.14.2", optional = true }

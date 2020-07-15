@@ -295,14 +295,21 @@ pub trait BaseService<'a> {
                                     node_details.insert("created_by_id", uid.to_bson());
                                     node_details.insert("updated_by_id", uid.to_bson());
                                 }
+                                let fallback_id = uuid::Uuid::new_v4().to_hyphenated().to_string();
                                 if let Some(insert_id) = document.get("_id") {
-                                    let i: ID = ID::with_bson(insert_id);
-                                    inserted_ids.push(i);
+                                    match insert_id {
+                                        Bson::Null => {
+                                            document.insert("_id", &fallback_id);
+                                            inserted_ids.push(ID::String(fallback_id));
+                                        }
+                                        _ => {
+                                            let i: ID = ID::with_bson(insert_id);
+                                            inserted_ids.push(i);
+                                        }
+                                    }
                                 } else {
-                                    let insert_id =
-                                        uuid::Uuid::new_v4().to_hyphenated().to_string();
-                                    document.insert("_id", &insert_id);
-                                    inserted_ids.push(ID::String(insert_id));
+                                    document.insert("_id", &fallback_id);
+                                    inserted_ids.push(ID::String(fallback_id));
                                 }
                                 document.insert("node", node_details);
                                 acc.push(document);
