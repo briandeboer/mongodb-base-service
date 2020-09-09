@@ -9,7 +9,7 @@ pub struct MockService {
     default_sort: Option<Document>,
 }
 
-impl BaseService<'_> for MongoService {
+impl BaseService<'_> for MockService {
     fn new(collection: &Collection, default_sort: Option<Document>) -> Self {
         MongoService {
             data_source: collection.clone(),

@@ -24,6 +24,9 @@ pub use node::NodeDetails;
 #[cfg(feature = "graphql")]
 pub use base::DeleteResponseGQL;
 
+#[cfg(feature = "test")]
+pub use base::mock_time;
+
 #[derive(Clone)]
 pub struct DataSources {
     collections: HashMap<String, MongoService>,

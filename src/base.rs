@@ -1,11 +1,11 @@
 use bson::{doc, oid::ObjectId, Bson, Document};
 
-use chrono::Utc;
 use log::{debug, warn};
 use mongodb::options::{FindOneOptions, FindOptions, InsertManyOptions, UpdateOptions};
 use mongodb::Collection;
 use mongodb_cursor_pagination::{CursorDirections, FindResult, PaginatedCursor};
 use serde::{Deserialize, Serialize};
+use std::time::SystemTime;
 use voca_rs::case::snake_case;
 
 use crate::error::ServiceError;
@@ -37,9 +37,42 @@ impl From<DeleteResponse> for DeleteResponseGQL {
 
 const DEFAULT_LIMIT: i64 = 25;
 
-fn now() -> i64 {
-    Utc::now().timestamp()
+#[cfg(not(any(test, feature = "test")))]
+fn now() -> SystemTime {
+    SystemTime::now()
 }
+
+#[cfg(any(test, feature = "test"))]
+pub mod mock_time {
+    use super::*;
+    use std::cell::RefCell;
+
+    thread_local! {
+        static MOCK_TIME: RefCell<Option<SystemTime>> = RefCell::new(None);
+    }
+
+    pub fn now() -> SystemTime {
+        MOCK_TIME.with(|cell| {
+            cell.borrow()
+                .as_ref()
+                .cloned()
+                .unwrap_or_else(SystemTime::now)
+        })
+    }
+
+    #[allow(dead_code)]
+    pub fn set_mock_time(time: SystemTime) {
+        MOCK_TIME.with(|cell| *cell.borrow_mut() = Some(time));
+    }
+
+    #[allow(dead_code)]
+    pub fn clear_mock_time() {
+        MOCK_TIME.with(|cell| *cell.borrow_mut() = None);
+    }
+}
+
+#[cfg(any(test, feature = "test"))]
+pub use mock_time::now;
 
 pub trait BaseService<'a> {
     fn new(collection: &Collection, default_sort: Option<Document>) -> Self;
@@ -280,6 +313,10 @@ pub trait BaseService<'a> {
         let query = doc! { self.id_parameter(): id.to_bson() };
         let find_result = coll.find_one(Some(query.clone()), None).unwrap();
         let mut inserted_ids: Vec<ID> = Vec::new();
+        let timestamp = now()
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .expect("Unable to retrieve time")
+            .as_secs();
         match find_result {
             None => Err(ServiceError::NotFound("Unable to find item".into())),
             Some(_item) => {
@@ -289,8 +326,8 @@ pub trait BaseService<'a> {
                         Ok(serialized_member) => {
                             if let bson::Bson::Document(mut document) = serialized_member {
                                 let mut node_details = Document::new();
-                                node_details.insert("date_created", now());
-                                node_details.insert("date_modified", now());
+                                node_details.insert("date_created", timestamp);
+                                node_details.insert("date_modified", timestamp);
                                 if let Some(uid) = &user_id {
                                     node_details.insert("created_by_id", uid.to_bson());
                                     node_details.insert("updated_by_id", uid.to_bson());
@@ -343,14 +380,18 @@ pub trait BaseService<'a> {
         let coll = self.data_source();
         let query = doc! { self.id_parameter(): id.to_bson() };
         let mut inserted_ids: Vec<ID> = Vec::new();
+        let timestamp = now()
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .expect("Unable to retrieve time")
+            .as_secs();
         // insert it
         let serialized_members = new_items.iter().fold(Vec::new(), |mut acc, item| {
             match bson::to_bson(&item) {
                 Ok(serialized_member) => {
                     if let bson::Bson::Document(mut document) = serialized_member {
                         let mut node_details = Document::new();
-                        node_details.insert("date_created", now());
-                        node_details.insert("date_modified", now());
+                        node_details.insert("date_created", timestamp);
+                        node_details.insert("date_modified", timestamp);
                         if let Some(uid) = &user_id {
                             node_details.insert("created_by_id", uid.to_bson());
                             node_details.insert("updated_by_id", uid.to_bson());
@@ -397,11 +438,15 @@ pub trait BaseService<'a> {
     {
         let coll = self.data_source();
         let serialized_member = bson::to_bson(&new_item)?;
+        let timestamp = now()
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .expect("Unable to retrieve time")
+            .as_secs();
 
         if let bson::Bson::Document(mut document) = serialized_member {
             let mut node_details = Document::new();
-            node_details.insert("date_created", now());
-            node_details.insert("date_modified", now());
+            node_details.insert("date_created", timestamp);
+            node_details.insert("date_modified", timestamp);
             if let Some(uid) = &user_id {
                 node_details.insert("created_by_id", uid.to_bson());
                 node_details.insert("updated_by_id", uid.to_bson());
@@ -436,14 +481,17 @@ pub trait BaseService<'a> {
         T: serde::Serialize,
     {
         let coll = self.data_source();
-
+        let timestamp = now()
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .expect("Unable to retrieve time")
+            .as_secs();
         let serialized_members = new_items.iter().fold(Vec::new(), |mut acc, item| {
             match bson::to_bson(&item) {
                 Ok(serialized_member) => {
                     if let bson::Bson::Document(mut document) = serialized_member {
                         let mut node_details = Document::new();
-                        node_details.insert("date_created", now());
-                        node_details.insert("date_modified", now());
+                        node_details.insert("date_created", timestamp);
+                        node_details.insert("date_modified", timestamp);
                         if let Some(uid) = &user_id {
                             node_details.insert("created_by_id", uid.to_bson());
                             node_details.insert("updated_by_id", uid.to_bson());
@@ -532,6 +580,10 @@ pub trait BaseService<'a> {
             format!("{}.{}", field_path, self.id_parameter()): &embedded_id.to_bson(),
         };
         let serialized_member = bson::to_bson(&update_item)?;
+        let timestamp = now()
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .expect("Unable to retrieve time")
+            .as_secs();
         if let bson::Bson::Document(document) = serialized_member {
             let array_path = format!("{}.$", field_path);
             let mut update_doc = Document::new();
@@ -541,7 +593,7 @@ pub trait BaseService<'a> {
                     update_doc.insert(format!("{}.{}", array_path, key), v.clone());
                 }
             }
-            update_doc.insert(format!("{}.node.date_modified", array_path), now());
+            update_doc.insert(format!("{}.node.date_modified", array_path), timestamp);
             if let Some(uid) = user_id {
                 update_doc.insert(format!("{}.node.updated_by_id", array_path), uid.to_bson());
             }
@@ -582,9 +634,12 @@ pub trait BaseService<'a> {
         let coll = self.data_source();
         let search = doc! { self.id_parameter(): id.to_bson() };
         let serialized_member = bson::to_bson(&update_item)?;
-        println!("{:?}", serialized_member);
+        let timestamp = now()
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .expect("Unable to retrieve time")
+            .as_secs();
         if let bson::Bson::Document(mut document) = serialized_member {
-            document.insert("node.date_modified", now());
+            document.insert("node.date_modified", timestamp);
             if let Some(uid) = user_id {
                 document.insert("node.updated_by_id", uid.to_bson());
             }
