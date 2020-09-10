@@ -1,6 +1,9 @@
 #[cfg(feature = "graphql")]
 #[macro_use]
 extern crate juniper;
+#[cfg(any(test, feature = "test"))]
+#[macro_use]
+extern crate lazy_static;
 
 use bson::Document;
 

@@ -45,29 +45,51 @@ fn now() -> SystemTime {
 #[cfg(any(test, feature = "test"))]
 pub mod mock_time {
     use super::*;
-    use std::cell::RefCell;
+    use std::sync::{Arc, Mutex};
+    use std::thread::spawn;
+    use std::time::Duration;
 
-    thread_local! {
-        static MOCK_TIME: RefCell<Option<SystemTime>> = RefCell::new(None);
+    lazy_static! {
+        static ref MOCK_TIME: Arc<Mutex<Option<SystemTime>>> = Arc::new(Mutex::new(None));
     }
 
     pub fn now() -> SystemTime {
-        MOCK_TIME.with(|cell| {
-            cell.borrow()
-                .as_ref()
-                .cloned()
-                .unwrap_or_else(SystemTime::now)
-        })
+        let mock_time = Arc::clone(&MOCK_TIME);
+        let time_handle = spawn(move || {
+            let time = mock_time.lock().unwrap().unwrap_or_else(SystemTime::now);
+            let cloned = time.clone();
+            cloned
+        });
+        time_handle.join().unwrap()
+    }
+
+    #[allow(dead_code)]
+    pub fn increase_mock_time(millis: u64) {
+        let mock_time = Arc::clone(&MOCK_TIME);
+        let current_time = now();
+
+        spawn(move || {
+            let mut data_mutex = mock_time.lock().unwrap();
+            *data_mutex = Some(current_time + Duration::from_millis(millis));
+        });
     }
 
     #[allow(dead_code)]
     pub fn set_mock_time(time: SystemTime) {
-        MOCK_TIME.with(|cell| *cell.borrow_mut() = Some(time));
+        let mock_time = Arc::clone(&MOCK_TIME);
+        spawn(move || {
+            let mut data_mutex = mock_time.lock().unwrap();
+            *data_mutex = Some(time);
+        });
     }
 
     #[allow(dead_code)]
     pub fn clear_mock_time() {
-        MOCK_TIME.with(|cell| *cell.borrow_mut() = None);
+        let mock_time = Arc::clone(&MOCK_TIME);
+        spawn(move || {
+            let mut data_mutex = mock_time.lock().unwrap();
+            *data_mutex = None;
+        });
     }
 }
 
